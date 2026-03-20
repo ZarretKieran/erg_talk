@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>erg_talk — Basic Web Example</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; background: #1a1a2e; color: #e0e0e0; }
+  button { padding: 0.5rem 1rem; margin: 0.25rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+  .btn-connect { background: #00b894; color: #fff; }
+  .btn-disconnect { background: #d63031; color: #fff; }
+  .btn-workout { background: #0984e3; color: #fff; }
+  .btn-end { background: #636e72; color: #fff; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #status { font-weight: bold; margin: 1rem 0; }
+  #data { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 1.1rem; line-height: 1.8; background: #16213e; padding: 1rem; border-radius: 8px; white-space: pre; }
+  #log { font-family: monospace; font-size: 0.75rem; max-height: 200px; overflow-y: auto; background: #0f0f23; padding: 0.5rem; border-radius: 4px; margin-top: 1rem; }
+  h1 { font-size: 1.3rem; }
+</style>
+</head>
+<body>
+
+<h1>erg_talk — Web Bluetooth Example</h1>
+
+<div>
+  <button class="btn-connect" id="btnConnect">Connect PM5</button>
+  <button class="btn-disconnect" id="btnDisconnect" disabled>Disconnect</button>
+</div>
+
+<div id="status">Disconnected</div>
+
+<div>
+  <button class="btn-workout" id="btnJustRow" disabled>Just Row</button>
+  <button class="btn-workout" id="btnDistance" disabled>2000m</button>
+  <button class="btn-workout" id="btnTime" disabled>20:00</button>
+  <button class="btn-workout" id="btnIntDist" disabled>4x500m</button>
+  <button class="btn-workout" id="btnIntTime" disabled>4x2:00</button>
+  <button class="btn-end" id="btnEnd" disabled>End Workout</button>
+</div>
+
+<div id="data">No data yet</div>
+<div id="log"></div>
+
+<!--
+  NOTE: This example imports from the compiled dist/ folder.
+  Run `npm run build` in the erg_talk directory first.
+  Then serve this file via a local HTTP server (e.g. python3 -m http.server).
+-->
+<script type="module">
+import { PM5, WebBluetoothTransport } from '../dist/index.js';
+
+const pm5 = new PM5(new WebBluetoothTransport());
+
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const dataEl = $('data');
+const statusEl = $('status');
+
+pm5.debugLog = (dir, msg) => {
+  const line = document.createElement('div');
+  line.textContent = `[${dir}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+};
+
+function setConnected(on) {
+  $('btnConnect').disabled = on;
+  $('btnDisconnect').disabled = !on;
+  $('btnJustRow').disabled = !on;
+  $('btnDistance').disabled = !on;
+  $('btnTime').disabled = !on;
+  $('btnIntDist').disabled = !on;
+  $('btnIntTime').disabled = !on;
+  $('btnEnd').disabled = !on;
+  statusEl.textContent = on ? 'Connected' : 'Disconnected';
+  statusEl.style.color = on ? '#00b894' : '#d63031';
+}
+
+function formatPace(sec) {
+  if (sec <= 0) return '-:--';
+  const m = Math.floor(sec / 60);
+  const s = (sec % 60).toFixed(1);
+  return `${m}:${s.padStart(4, '0')}`;
+}
+
+pm5.on('data', (d) => {
+  const mins = Math.floor(d.elapsed_time / 60);
+  const secs = (d.elapsed_time % 60).toFixed(1);
+  dataEl.textContent = [
+    `Time:     ${mins}:${secs.padStart(4, '0')}`,
+    `Distance: ${d.distance.toFixed(1)} m`,
+    `Pace:     ${formatPace(d.current_pace)} /500m`,
+    `SPM:      ${d.stroke_rate}`,
+    `Watts:    ${d.watts}`,
+    `HR:       ${d.heart_rate || '--'}`,
+    `Calories: ${d.calories}`,
+    `Strokes:  ${d.stroke_count}`,
+    `Drag:     ${d.drag_factor}`,
+  ].join('\n');
+});
+
+pm5.on('disconnected', () => setConnected(false));
+
+$('btnConnect').onclick = async () => {
+  try {
+    const info = await pm5.connect();
+    statusEl.textContent = `Connected: ${info.model} (${info.serial})`;
+    setConnected(true);
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  }
+};
+
+$('btnDisconnect').onclick = () => pm5.disconnect();
+$('btnJustRow').onclick = () => pm5.programJustRow();
+$('btnDistance').onclick = () => pm5.programDistance(2000, 500);
+$('btnTime').onclick = () => pm5.programTime(1200, 240);
+$('btnIntDist').onclick = () => pm5.programIntervalDistance(500, 60, 4);
+$('btnIntTime').onclick = () => pm5.programIntervalTime(120, 30, 4);
+$('btnEnd').onclick = () => pm5.endWorkout();
+</script>
+
+</body>
+</html>

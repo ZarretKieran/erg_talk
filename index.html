@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PM5 Erg Interface — erg_talk</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+  .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; color: #00d4ff; margin-bottom: 12px; }
+  h2 { font-size: 1rem; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .panel { background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-connect { background: #00d4ff; color: #000; }
+  .btn-disconnect { background: #ff4757; color: #fff; }
+  .btn-program { background: #2ed573; color: #000; }
+  .btn-stop { background: #ff6348; color: #fff; }
+  .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .status-dot.red { background: #ff4757; }
+  .status-dot.green { background: #2ed573; }
+  .status-dot.yellow { background: #ffa502; }
+  .device-info { font-size: 0.8rem; color: #888; margin-top: 6px; }
+
+  .warning { background: #ff634833; border: 1px solid #ff6348; border-radius: 4px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem; display: none; }
+
+  .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .form-row label { min-width: 100px; font-size: 0.85rem; color: #aaa; }
+  .form-row input, .form-row select { padding: 6px 10px; border: 1px solid #333; border-radius: 4px; background: #0f3460; color: #e0e0e0; font-size: 0.9rem; width: 120px; }
+  .workout-params { margin-top: 8px; }
+  .hidden { display: none !important; }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .metric-box { background: #0f3460; border-radius: 8px; padding: 14px; text-align: center; }
+  .metric-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-family: 'Courier New', monospace; font-size: 2.2rem; font-weight: 700; color: #00d4ff; line-height: 1.1; }
+  .metric-unit { font-size: 0.7rem; color: #666; }
+
+  .secondary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .secondary-box { background: #0f3460; border-radius: 6px; padding: 10px; text-align: center; }
+  .secondary-box .metric-value { font-size: 1.1rem; }
+
+  .state-indicator { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+  .state-waiting { background: #ffa50233; color: #ffa502; }
+  .state-rowing { background: #2ed57333; color: #2ed573; }
+  .state-rest { background: #ff634833; color: #ff6348; }
+  .state-finished { background: #74747433; color: #747474; }
+
+  .debug-toggle { cursor: pointer; font-size: 0.8rem; color: #666; user-select: none; }
+  .debug-log { max-height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.7rem; color: #666; background: #0a0a1a; border-radius: 4px; padding: 8px; margin-top: 6px; }
+  .debug-log .tx { color: #00d4ff; }
+  .debug-log .rx { color: #2ed573; }
+  .debug-log .err { color: #ff4757; }
+  .debug-log .info { color: #ffa502; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>PM5 Erg Interface <span style="font-size:0.7rem;color:#666;">powered by erg_talk</span></h1>
+
+  <div class="warning" id="browserWarning">
+    Web Bluetooth is not supported in this browser. Please use Chrome or Edge on desktop.
+  </div>
+
+  <!-- Connection Panel -->
+  <div class="panel">
+    <h2>Connection</h2>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <button class="btn btn-connect" id="btnConnect">Connect PM5</button>
+      <button class="btn btn-disconnect" id="btnDisconnect" disabled>Disconnect</button>
+      <span><span class="status-dot red" id="statusDot"></span><span id="statusText">Disconnected</span></span>
+    </div>
+    <div class="device-info" id="deviceInfo"></div>
+  </div>
+
+  <!-- Workout Setup Panel -->
+  <div class="panel">
+    <h2>Workout Setup</h2>
+    <div class="form-row">
+      <label>Type</label>
+      <select id="workoutType">
+        <option value="justrow">Just Row</option>
+        <option value="distance">Single Distance</option>
+        <option value="time">Single Time</option>
+        <option value="interval_distance">Intervals (Distance)</option>
+        <option value="interval_time">Intervals (Time)</option>
+      </select>
+    </div>
+
+    <div class="workout-params" id="paramsDistance">
+      <div class="form-row"><label>Distance (m)</label><input type="number" id="inputDistance" value="2000" min="100" max="50000" step="100"></div>
+      <div class="form-row"><label>Split (m)</label><input type="number" id="inputSplitDistance" value="500" min="100" max="50000" step="100"></div>
+    </div>
+
+    <div class="workout-params hidden" id="paramsTime">
+      <div class="form-row"><label>Minutes</label><input type="number" id="inputMinutes" value="20" min="1" max="240"></div>
+      <div class="form-row"><label>Seconds</label><input type="number" id="inputSeconds" value="0" min="0" max="59"></div>
+      <div class="form-row"><label>Split (min)</label><input type="number" id="inputSplitMinutes" value="4" min="1" max="60"></div>
+    </div>
+
+    <div class="workout-params hidden" id="paramsIntervalDistance">
+      <div class="form-row"><label>Distance (m)</label><input type="number" id="inputIntDistance" value="500" min="100" max="50000" step="100"></div>
+      <div class="form-row"><label>Rest (sec)</label><input type="number" id="inputIntDistRest" value="60" min="0" max="600"></div>
+      <div class="form-row"><label>Intervals</label><input type="number" id="inputIntDistCount" value="8" min="1" max="99"></div>
+    </div>
+
+    <div class="workout-params hidden" id="paramsIntervalTime">
+      <div class="form-row"><label>Work (min)</label><input type="number" id="inputIntMinutes" value="2" min="1" max="60"></div>
+      <div class="form-row"><label>Work (sec)</label><input type="number" id="inputIntSeconds" value="0" min="0" max="59"></div>
+      <div class="form-row"><label>Rest (sec)</label><input type="number" id="inputIntTimeRest" value="30" min="0" max="600"></div>
+      <div class="form-row"><label>Intervals</label><input type="number" id="inputIntTimeCount" value="4" min="1" max="99"></div>
+    </div>
+
+    <div class="form-row" style="margin-top:10px;">
+      <button class="btn btn-program" id="btnProgram" disabled>Program Workout</button>
+      <button class="btn btn-stop" id="btnStop" disabled>End Workout</button>
+    </div>
+  </div>
+
+  <!-- Real-time Monitor -->
+  <div class="panel">
+    <h2>Live Monitor</h2>
+    <div class="metrics-grid">
+      <div class="metric-box"><div class="metric-label">Time</div><div class="metric-value" id="mTime">0:00.0</div></div>
+      <div class="metric-box"><div class="metric-label">Distance</div><div class="metric-value" id="mDistance">0</div><div class="metric-unit">meters</div></div>
+      <div class="metric-box"><div class="metric-label">Pace /500m</div><div class="metric-value" id="mPace">-:--</div></div>
+      <div class="metric-box"><div class="metric-label">Stroke Rate</div><div class="metric-value" id="mSPM">0</div><div class="metric-unit">spm</div></div>
+      <div class="metric-box"><div class="metric-label">Heart Rate</div><div class="metric-value" id="mHR">--</div><div class="metric-unit">bpm</div></div>
+      <div class="metric-box"><div class="metric-label">Watts</div><div class="metric-value" id="mWatts">0</div><div class="metric-unit">W</div></div>
+      <div class="metric-box"><div class="metric-label">Calories</div><div class="metric-value" id="mCals">0</div><div class="metric-unit">kcal</div></div>
+      <div class="metric-box"><div class="metric-label">Strokes</div><div class="metric-value" id="mStrokes">0</div></div>
+    </div>
+    <div class="secondary-grid">
+      <div class="secondary-box"><div class="metric-label">State</div><div id="mState"><span class="state-indicator state-waiting">Idle</span></div></div>
+      <div class="secondary-box"><div class="metric-label">Avg Pace</div><div class="metric-value" id="mAvgPace">-:--</div></div>
+      <div class="secondary-box"><div class="metric-label">Drag Factor</div><div class="metric-value" id="mDrag">--</div></div>
+      <div class="secondary-box"><div class="metric-label">Interval</div><div class="metric-value" id="mInterval">--</div></div>
+    </div>
+  </div>
+
+  <!-- Debug Log -->
+  <div class="panel">
+    <div class="debug-toggle" id="debugToggle">Debug Log [+]</div>
+    <div class="debug-log hidden" id="debugLog"></div>
+  </div>
+</div>
+
+<script type="module">
+import { PM5, WebBluetoothTransport, WORKOUT_STATE_LABELS } from './dist/index.js';
+
+// ============================================================
+// STATE
+// ============================================================
+
+const transport = new WebBluetoothTransport();
+const pm5 = new PM5(transport);
+
+const WORKOUT_STATE_CSS = {
+  0: 'state-waiting', 1: 'state-rowing', 2: 'state-waiting', 3: 'state-rest',
+  4: 'state-rowing', 5: 'state-finished', 7: 'state-rowing',
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const $ = (id) => document.getElementById(id);
+
+function formatTime(seconds) {
+  if (seconds <= 0) return '0:00.0';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const whole = Math.floor(s);
+  const frac = Math.floor((s - whole) * 10);
+  return `${m}:${whole.toString().padStart(2, '0')}.${frac}`;
+}
+
+function formatPace(seconds) {
+  if (seconds <= 0 || seconds > 599) return '-:--';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const whole = Math.floor(s);
+  const frac = Math.floor((s - whole) * 10);
+  return `${m}:${whole.toString().padStart(2, '0')}.${frac}`;
+}
+
+function debugLog(type, msg) {
+  const el = $('debugLog');
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const prefix = type === 'tx' ? 'TX>' : type === 'rx' ? 'RX<' : type === 'err' ? 'ERR' : 'INF';
+  const div = document.createElement('div');
+  div.className = type;
+  div.textContent = `[${ts}] ${prefix} ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ============================================================
+// STATUS & DISPLAY
+// ============================================================
+
+function setStatus(state) {
+  const dot = $('statusDot');
+  const text = $('statusText');
+  const btnC = $('btnConnect');
+  const btnD = $('btnDisconnect');
+  const btnP = $('btnProgram');
+  const btnS = $('btnStop');
+
+  switch (state) {
+    case 'disconnected':
+      dot.className = 'status-dot red'; text.textContent = 'Disconnected';
+      btnC.disabled = false; btnD.disabled = true; btnP.disabled = true; btnS.disabled = true;
+      break;
+    case 'connecting':
+      dot.className = 'status-dot yellow'; text.textContent = 'Connecting...';
+      btnC.disabled = true; btnD.disabled = true; btnP.disabled = true; btnS.disabled = true;
+      break;
+    case 'connected':
+      dot.className = 'status-dot green'; text.textContent = 'Connected';
+      btnC.disabled = true; btnD.disabled = false; btnP.disabled = false; btnS.disabled = false;
+      break;
+  }
+}
+
+function updateDisplay(d) {
+  $('mTime').textContent = formatTime(d.elapsed_time);
+  $('mDistance').textContent = Math.round(d.distance);
+  $('mPace').textContent = formatPace(d.current_pace);
+  $('mSPM').textContent = d.stroke_rate || 0;
+  $('mHR').textContent = d.heart_rate > 0 ? d.heart_rate : '--';
+  $('mWatts').textContent = d.watts || 0;
+  $('mCals').textContent = d.calories || 0;
+  $('mStrokes').textContent = d.stroke_count || 0;
+  $('mAvgPace').textContent = formatPace(d.average_pace);
+  $('mDrag').textContent = d.drag_factor > 0 ? d.drag_factor : '--';
+  $('mInterval').textContent = d.split_number > 0 ? d.split_number : '--';
+
+  const stateLabel = WORKOUT_STATE_LABELS[d.workout_state] || 'Unknown';
+  const stateCss = WORKOUT_STATE_CSS[d.workout_state] || 'state-waiting';
+  $('mState').innerHTML = `<span class="state-indicator ${stateCss}">${stateLabel}</span>`;
+}
+
+// ============================================================
+// WORKOUT PARAMS TOGGLE
+// ============================================================
+
+function updateWorkoutParams() {
+  const type = $('workoutType').value;
+  const panels = {
+    justrow: null,
+    distance: 'paramsDistance',
+    time: 'paramsTime',
+    interval_distance: 'paramsIntervalDistance',
+    interval_time: 'paramsIntervalTime',
+  };
+  for (const id of Object.values(panels)) {
+    if (id) $(id).classList.add('hidden');
+  }
+  if (panels[type]) $(panels[type]).classList.remove('hidden');
+}
+
+// ============================================================
+// WORKOUT PROGRAMMING
+// ============================================================
+
+async function handleProgram() {
+  if (!pm5.connected) { debugLog('err', 'Not connected'); return; }
+
+  const type = $('workoutType').value;
+  try {
+    switch (type) {
+      case 'justrow':
+        await pm5.programJustRow();
+        break;
+      case 'distance':
+        await pm5.programDistance(
+          parseInt($('inputDistance').value) || 2000,
+          parseInt($('inputSplitDistance').value) || 500,
+        );
+        break;
+      case 'time': {
+        const min = parseInt($('inputMinutes').value) || 20;
+        const sec = parseInt($('inputSeconds').value) || 0;
+        const splitMin = parseInt($('inputSplitMinutes').value) || 4;
+        await pm5.programTime(min * 60 + sec, splitMin * 60);
+        break;
+      }
+      case 'interval_distance':
+        await pm5.programIntervalDistance(
+          parseInt($('inputIntDistance').value) || 500,
+          parseInt($('inputIntDistRest').value) || 60,
+          parseInt($('inputIntDistCount').value) || 8,
+        );
+        break;
+      case 'interval_time': {
+        const min = parseInt($('inputIntMinutes').value) || 2;
+        const sec = parseInt($('inputIntSeconds').value) || 0;
+        await pm5.programIntervalTime(
+          min * 60 + sec,
+          parseInt($('inputIntTimeRest').value) || 30,
+          parseInt($('inputIntTimeCount').value) || 4,
+        );
+        break;
+      }
+    }
+  } catch (err) {
+    debugLog('err', 'Program failed: ' + err.message);
+  }
+}
+
+// ============================================================
+// PM5 EVENTS
+// ============================================================
+
+pm5.debugLog = debugLog;
+pm5.on('data', updateDisplay);
+pm5.on('disconnected', () => {
+  setStatus('disconnected');
+  $('deviceInfo').textContent = '';
+});
+
+// ============================================================
+// BUTTON BINDINGS
+// ============================================================
+
+$('btnConnect').addEventListener('click', async () => {
+  setStatus('connecting');
+  try {
+    const info = await pm5.connect();
+    $('deviceInfo').textContent = `Model: ${info.model} | Serial: ${info.serial} | FW: ${info.firmware}`;
+    setStatus('connected');
+  } catch (err) {
+    debugLog('err', 'Connect failed: ' + err.message);
+    setStatus('disconnected');
+  }
+});
+
+$('btnDisconnect').addEventListener('click', () => pm5.disconnect());
+$('btnProgram').addEventListener('click', handleProgram);
+$('btnStop').addEventListener('click', () => pm5.endWorkout());
+$('workoutType').addEventListener('change', updateWorkoutParams);
+
+$('debugToggle').addEventListener('click', () => {
+  const log = $('debugLog');
+  const toggle = $('debugToggle');
+  log.classList.toggle('hidden');
+  toggle.textContent = log.classList.contains('hidden') ? 'Debug Log [+]' : 'Debug Log [-]';
+});
+
+// ============================================================
+// INIT
+// ============================================================
+
+if (!navigator.bluetooth) {
+  $('browserWarning').style.display = 'block';
+}
+updateWorkoutParams();
+</script>
+</body>
+</html>

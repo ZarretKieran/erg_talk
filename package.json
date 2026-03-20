@@ -1,0 +1,38 @@
+{
+  "name": "erg-talk",
+  "version": "0.1.0",
+  "description": "Platform-agnostic Concept2 PM5 ergometer interface library. CSAFE protocol + BLE transport abstraction.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "concept2",
+    "pm5",
+    "ergometer",
+    "csafe",
+    "bluetooth",
+    "ble",
+    "rowing"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/web-bluetooth": "^0.0.21",
+    "typescript": "^5.4.0"
+  }
+}

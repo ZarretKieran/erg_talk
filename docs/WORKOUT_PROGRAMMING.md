@@ -1,6 +1,6 @@
 # Workout Programming Guide
 
-Step-by-step CSAFE frame sequences for programming each workout type on the PM5. All sequences are verified working on real PM5 hardware.
+Step-by-step CSAFE programming and race-start sequencing for the PM5. The library no longer treats programming as fire-and-forget: control writes are serialized, PM responses are parsed from RX, asynchronous screen-state changes are polled, and workout type is verified after setup.
 
 ## Workout Types
 
@@ -15,10 +15,34 @@ Step-by-step CSAFE frame sequences for programming each workout type on the PM5.
 ## General Pattern
 
 Every workout follows this sequence:
-1. Set workout type
-2. Set workout parameters (duration, splits, rest, etc.)
-3. Configure workout (flag=0x01 for programming)
-4. Set screen state to PrepareToRow
+1. Reset or rearm the PM into a programmable state
+2. Send `SETPROGRAM` when the flow requires explicit workout programming
+3. Set workout type
+4. Set workout parameters (duration, splits, rest, etc.)
+5. Configure workout (flag=0x01 for programming)
+6. Set screen state to `PrepareToRow`
+7. Poll `GET_SCREENSTATESTATUS` until the PM reports screen work is complete
+8. Poll `GET_WORKOUTTYPE` to verify the PM accepted the intended workout
+
+The library currently uses that verified path in both `erg_talk/src/pm5.ts` and the mirrored iOS PM5 manager.
+
+## Race Start Staging
+
+Fixed-distance and fixed-time races now support PM5-native staged starts:
+
+1. Program the underlying workout using the verified sequence above
+2. Send `SET_RACETYPE`
+3. Send `SET_RACESTARTPARAMS`
+4. Send `SET_SCREENSTATE(RACE, WARMUP_FOR_RACE)`
+5. Send `SET_RACEOPERATIONTYPE(RACE_INIT)`
+6. During countdown arm the PM with:
+   - `SET_SCREENSTATE(RACE, PREPARE_TO_RACE)`
+   - `SET_RACEOPERATIONTYPE(RACE_WAIT_TO_START)`
+7. At `T-0` trigger the PM-native start with:
+   - `SET_SCREENSTATE(WORKOUT, PREPARE_TO_RACE_START)`
+   - `SET_RACEOPERATIONTYPE(START)`
+
+For interval formats, the library still uses the improved workout-programming path and falls back to `GOINUSE` at start rather than PM5-native race mode.
 
 ## Just Row
 
@@ -133,9 +157,10 @@ Frame: CSAFE([0x86])    // GOFINISHED_CMD (short command, no data)
 2. **Time units**: Duration values for SET_WORKOUTDURATION and SET_SPLITDURATION are in centiseconds (seconds * 100), NOT milliseconds.
 3. **Rest units**: SET_RESTDURATION values are in plain SECONDS (not centiseconds).
 4. **Frame size**: Each CSAFE frame after byte-stuffing must fit in BLE writes of max 20 bytes. Split larger frames.
-5. **Timing**: Wait at least 100ms between sending frames. The PM5 needs time to process each one.
+5. **Asynchronous screen changes**: `SET_SCREENSTATE` is not instantaneous. Poll `GET_SCREENSTATESTATUS` instead of assuming the PM is ready immediately after the write.
 6. **Interval indexing**: SET_INTERVALCOUNT uses 0-based indexing.
 7. **Duration type byte**: Don't forget the type prefix byte (0x00 for time, 0x80 for distance) before the 32-bit value.
+8. **Write success is not enough**: A BLE write completing does not mean the PM accepted the command. Poll PM getters and read `GET_ERRORVALUE2` when verification fails.
 
 ## Decision Tree
 
@@ -160,4 +185,10 @@ See `src/pm5.ts` for the high-level API:
 - `pm5.programTime(totalSeconds, splitSeconds)`
 - `pm5.programIntervalDistance(meters, restSeconds, count)`
 - `pm5.programIntervalTime(workSeconds, restSeconds, count)`
+- `pm5.prepareRaceWorkout(config)`
+- `pm5.armRaceStart(config)`
+- `pm5.triggerRaceStart(config)`
+- `pm5.queryWorkoutState()`
+- `pm5.queryScreenStateStatus()`
+- `pm5.queryErrorValue()`
 - `pm5.endWorkout()`

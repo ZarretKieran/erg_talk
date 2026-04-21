@@ -100,14 +100,27 @@ try await pm5.programDistance(meters: 2000, splitMeters: 500)
 
 5. **DataView callback**: The `subscribe()` callback receives a `DataView`. On iOS (CoreBluetooth), you'll receive `Data` — convert it to a format compatible with the parser functions.
 
-6. **No CSAFE response parsing needed**: For workout programming and data streaming, you never need to parse CSAFE responses. The RX subscription is only for debug logging.
+6. **CSAFE response parsing now matters**: The control path waits for PM responses on RX. The library serializes control writes and expects one in-flight PM request at a time.
+
+7. **Screen state is asynchronous**: `SET_SCREENSTATE` does not complete immediately. Poll `queryScreenStateStatus()` or rely on the built-in wait helpers instead of assuming the PM is ready after the write returns.
+
+8. **Write success is not acceptance**: A BLE write completing only means the packet left the client. The PM may still reject the command, so verify via `queryWorkoutState()`, `queryErrorValue()`, or the built-in workout verification path.
 
 ## Adding a New Workout Type
 
 1. Check if the workout type exists in `WORKOUT_TYPE` constants (`src/constants.ts`)
 2. Look at the programming pattern in `docs/WORKOUT_PROGRAMMING.md`
 3. Add a new method to the `PM5` class in `src/pm5.ts` following the existing patterns
-4. The frame building always follows: set type → set parameters → configure → screen state
+4. The frame building now follows: reset/rearm → program → set type → set parameters → configure → screen state → poll screen completion → verify
+
+## Adding Countdown-Based Race Starts
+
+For fixed distance and fixed time race starts:
+
+1. Prepare the workout with `prepareRaceWorkout(config)`
+2. Arm the countdown transition with `armRaceStart(config)`
+3. Trigger the native PM race start with `triggerRaceStart(config)`
+4. Clear cached race state with `resetRaceFlow()` when the race ends, disconnects, or the user leaves the countdown flow
 
 ## Protocol Debugging
 

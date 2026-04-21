@@ -200,3 +200,24 @@ export interface PmSubCommand {
   readonly cmd: number;
   readonly data: readonly number[];
 }
+
+export interface CsafeCommand {
+  readonly cmd: number;
+  readonly data?: readonly number[];
+}
+
+export interface CsafeCommandResponse {
+  readonly command: number;
+  readonly data: Uint8Array;
+}
+
+export interface CsafeFrameStatus {
+  readonly raw: number;
+  readonly previousFrameStatus: number;
+  readonly stateMachineState: number;
+}
+
+export interface CsafeFrameResponse {
+  readonly status: CsafeFrameStatus;
+  readonly responses: readonly CsafeCommandResponse[];
+}
